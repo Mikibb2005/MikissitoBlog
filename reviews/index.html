@@ -3,36 +3,44 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Reviews de videojuegos de MikissitoBlog.">
-  <title>MikissitoBlog — Reviews</title>
+  <meta name="description" content="Reviews personales de videojuegos en MikissitoBlog.">
+  <title>MikissitoBlog - Reviews</title>
   <link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
-  <header class="site-header">
-    <a class="brand" href="../index.html"><span class="brand-mark">MB</span><span>MikissitoBlog<small>GAME LOG // EST. 1999</small></span></a>
-    <nav class="main-nav" aria-label="Navegación principal">
-      <a href="../index.html">Inicio</a><a class="active" href="index.html">Reviews</a><a href="../entrenamiento/index.html">Entrenamiento</a>
-    </nav>
-  </header>
-  <main>
-    <section class="page-heading">
-      <p class="eyebrow">ARCHIVO // 001</p>
-      <h1>Reviews<span class="heading-dot">.</span></h1>
-      <p>Juegos probados, opiniones propias y puntuaciones sin spoilers sorpresa.</p>
-    </section>
-    <div class="entry-grid">
-      <!-- GENERATED REVIEWS -->
-    </div>
-    <!-- EMPTY REVIEWS START -->
-    <section class="panel empty-state">
-      <div class="empty-icon" aria-hidden="true">R_</div>
-      <p class="eyebrow">NO HAY ENTRADAS TODAVÍA</p>
-      <h2>El archivo está esperando su primer juego.</h2>
-      <p>Usa la aplicación local <code>tools/generador.py</code> para escribir una review. El generador creará la página HTML y añadirá su tarjeta a este índice.</p>
-      <span class="tag">NUEVA REVIEW // HTML GENERADO LOCALMENTE</span>
-    </section>
-    <!-- EMPTY REVIEWS END -->
-  </main>
-  <footer class="site-footer"><span>MIKISSITOBLOG</span><span>REVIEWS // ARCHIVE</span></footer>
+  <div class="site-wrap">
+    <header class="site-header">
+      <div class="header-top">
+        <div><a class="brand" href="../index.html">MikissitoBlog</a><p class="tagline">Juegos, partidas y cosas que me apetecía escribir.</p></div>
+        <p class="header-note">La página personal de<br><strong>Mikibb2005</strong></p>
+      </div>
+      <nav class="main-nav" aria-label="Navegación principal">
+        <a href="../index.html">Inicio</a><a class="active" href="index.html">Reviews</a><a href="../entrenamiento/index.html">Entrenamiento CS2</a>
+      </nav>
+    </header>
+
+    <main class="page-layout">
+      <section class="content-column">
+        <div class="page-title"><h1>Reviews</h1><p>Juegos que he terminado y lo que me han parecido.</p></div>
+        <div class="entry-grid">
+          <!-- GENERATED REVIEWS -->
+        </div>
+        <!-- EMPTY REVIEWS START -->
+        <section class="empty-state">
+          <h2>Aún no he publicado ninguna review</h2>
+          <p>Cuando termine un juego y escriba algo sobre él, aparecerá aquí.</p>
+        </section>
+        <!-- EMPTY REVIEWS END -->
+      </section>
+
+      <aside class="site-sidebar">
+        <section class="sidebar-box"><h2>Sobre mí</h2><p>Soy Mikibb2005. Aquí iré dejando mis opiniones sobre juegos que haya jugado.</p></section>
+        <section class="sidebar-box"><h2>Secciones</h2><ul><li><a href="../index.html">Inicio</a></li><li><a href="index.html">Reviews</a></li><li><a href="../entrenamiento/index.html">Diario de CS2</a></li></ul></section>
+        <section class="sidebar-box"><h2>Últimas reviews</h2><p>De momento, ninguna. Pronto habrá alguna por aquí.</p></section>
+      </aside>
+    </main>
+
+    <footer class="site-footer"><span><a href="../index.html">Volver al inicio</a></span><span>MikissitoBlog</span></footer>
+  </div>
 </body>
 </html>

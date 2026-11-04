@@ -169,15 +169,24 @@ def write_review(data: dict[str, str]) -> Path:
   <title>{escape(title)} — MikissitoBlog</title><link rel="stylesheet" href="../css/style.css">
 </head>
 <body>
-  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">MB</span><span>MikissitoBlog<small>GAME LOG // EST. 1999</small></span></a><nav class="main-nav" aria-label="Navegación principal"><a href="../index.html">Inicio</a><a class="active" href="index.html">Reviews</a><a href="../entrenamiento/index.html">Entrenamiento</a></nav></header>
-  <main>
-    <section class="page-heading"><p class="eyebrow">REVIEW // {escape(data["date"])}</p><h1>{escape(title)}<span class="heading-dot">.</span></h1><p>{escape(data["platform"])} // {escape(data["genre"])}</p></section>
-    <article class="panel review-layout">{image_html}<div><p class="eyebrow">PUNTUACIÓN</p><p class="review-score">{score}<span> / 10</span></p><p class="eyebrow">SOBRE EL JUEGO</p><p>{multiline(data["review"]) or "Review pendiente de completar."}</p></div></article>
-    <section class="home-grid review-points"><article class="panel"><p class="eyebrow">01 // LO MEJOR</p><h2>Pros</h2><ul>{list_items(pros)}</ul></article><article class="panel"><p class="eyebrow">02 // POR MEJORAR</p><h2>Contras</h2><ul>{list_items(cons)}</ul></article></section>
-    <p><a class="text-link" href="index.html">← VOLVER A REVIEWS</a></p>
-  </main>
-  <footer class="site-footer"><span>MIKISSITOBLOG</span><span>REVIEW // {escape(data["game"])}</span></footer>
-</body></html>
+  <div class="site-wrap">
+    <header class="site-header">
+      <div class="header-top"><div><a class="brand" href="../index.html">MikissitoBlog</a><p class="tagline">Juegos, partidas y cosas que me apetecía escribir.</p></div><p class="header-note">La página personal de<br><strong>Mikibb2005</strong></p></div>
+      <nav class="main-nav" aria-label="Navegación principal"><a href="../index.html">Inicio</a><a class="active" href="index.html">Reviews</a><a href="../entrenamiento/index.html">Entrenamiento CS2</a></nav>
+    </header>
+    <main class="page-layout">
+      <section class="content-column">
+        <div class="page-title"><p class="post-meta">REVIEW · {escape(data["date"])}</p><h1>{escape(title)}</h1><p>{escape(data["game"])} · {escape(data["platform"])} · {escape(data["genre"])}</p></div>
+        <article class="review-layout">{image_html}<div><h2>Mi nota: <span class="review-score">{score}/10</span></h2><h2>Qué me ha parecido</h2><p>{multiline(data["review"]) or "Review pendiente de completar."}</p></div></article>
+        <section class="review-points"><article class="panel"><h2>Lo mejor</h2><ul>{list_items(pros)}</ul></article><article class="panel"><h2>Lo que no me ha convencido</h2><ul>{list_items(cons)}</ul></article></section>
+        <p><a href="index.html">← Volver a las reviews</a></p>
+      </section>
+      <aside class="site-sidebar"><section class="sidebar-box"><h2>Secciones</h2><ul><li><a href="../index.html">Inicio</a></li><li><a href="index.html">Reviews</a></li><li><a href="../entrenamiento/index.html">Diario de CS2</a></li></ul></section><section class="sidebar-box"><h2>Sobre mí</h2><p>Soy Mikibb2005. Esta es mi opinión personal sobre el juego.</p></section></aside>
+    </main>
+    <footer class="site-footer"><span><a href="index.html">Volver a reviews</a></span><span>MikissitoBlog</span></footer>
+  </div>
+</body>
+</html>
 """
     output.write_text(review_html, encoding="utf-8")
     add_review_card(output.name, title, data)
@@ -188,11 +197,11 @@ def add_review_card(filename: str, title: str, data: dict[str, str]) -> None:
     index = REVIEWS_DIR / "index.html"
     source = index.read_text(encoding="utf-8")
     marker = "    <!-- GENERATED REVIEWS -->"
-    card = f"""    <article class="panel review-card">
-      <p class="eyebrow">REVIEW // {escape(data["date"])} // {escape(data["platform"])}</p>
+    card = f"""    <article class="review-card">
+      <p class="post-meta">{escape(data["date"])} · {escape(data["platform"])}</p>
       <h2><a href="{escape(filename)}">{escape(title)}</a></h2>
-      <p>{escape(data["genre"])} · {escape(data["score"])}/10</p>
-      <a class="text-link" href="{escape(filename)}">LEER REVIEW ↗</a>
+      <p>{escape(data["game"])} · {escape(data["genre"])} · {escape(data["score"])}/10</p>
+      <p><a href="{escape(filename)}">Leer la review</a></p>
     </article>
 """
     if marker in source:
@@ -234,17 +243,27 @@ def write_week(data: dict[str, str], days: list[dict[str, str]]) -> Path:
             f'<details><summary>ESTADÍSTICAS DEL DÍA</summary><p>{sessions}</p></details></article>'
         )
     week_html = f"""<!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Semana {dates[0].isoformat()} — MikissitoBlog</title><link rel="stylesheet" href="../css/style.css"></head>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Semana {dates[0].isoformat()} - MikissitoBlog</title><link rel="stylesheet" href="../css/style.css"></head>
 <body>
-  <header class="site-header"><a class="brand" href="../index.html"><span class="brand-mark">MB</span><span>MikissitoBlog<small>GAME LOG // EST. 1999</small></span></a><nav class="main-nav" aria-label="Navegación principal"><a href="../index.html">Inicio</a><a href="../reviews/index.html">Reviews</a><a class="active" href="index.html">Entrenamiento</a></nav></header>
-  <main><section class="page-heading"><p class="eyebrow">CS2 // SEMANA {dates[0].strftime("%d/%m")} — {end.strftime("%d/%m/%Y")}</p><h1>Weekly Report<span class="heading-dot">.</span></h1><p>{escape(data["focus"]) or "Resumen de entrenamiento y partidas de la semana."}</p></section>
-    <section class="stats-strip"><div><span class="stat-label">PERIODO</span><strong>{dates[0].strftime("%d/%m/%Y")} — {end.strftime("%d/%m/%Y")}</strong></div><div><span class="stat-label">FUENTE</span><strong>CSSTATS / REGISTRO MANUAL</strong></div><div><span class="stat-label">ENLACE DE PERFIL</span><strong><a href="{escape(data["profile_url"])}">ABRIR CSSTATS ↗</a></strong></div></section>
-    <section class="panel"><p class="eyebrow">RESUMEN // DATOS POR DÍA</p><div class="table-wrap"><table><tbody>{"".join(weekly_rows)}</tbody></table></div></section>
-    {f'<section class="panel profile-snapshot"><p class="eyebrow">CSSTATS // DATOS DE PERFIL SIN FECHA</p><p>{multiline(data["profile_stats"])}</p><p class="tag">DATOS GENERALES // NO ATRIBUIDOS A UN DÍA</p></section>' if data["profile_stats"].strip() else ""}
-    <section class="day-grid">{"".join(day_cards)}</section>
-    <section class="panel"><p class="eyebrow">REVIEW DE LA SEMANA</p><h2>Qué mantener / qué mejorar</h2><p>{multiline(data["summary"]) or "Añade aquí una conclusión de la semana."}</p></section>
-    <p><a class="text-link" href="index.html">← VOLVER AL DIARIO</a></p>
-  </main><footer class="site-footer"><span>MIKISSITOBLOG</span><span>TRAINING // REVIEW // REPEAT</span></footer>
+  <div class="site-wrap">
+    <header class="site-header">
+      <div class="header-top"><div><a class="brand" href="../index.html">MikissitoBlog</a><p class="tagline">Juegos, partidas y cosas que me apetecía escribir.</p></div><p class="header-note">La página personal de<br><strong>Mikibb2005</strong></p></div>
+      <nav class="main-nav" aria-label="Navegación principal"><a href="../index.html">Inicio</a><a href="../reviews/index.html">Reviews</a><a class="active" href="index.html">Entrenamiento CS2</a></nav>
+    </header>
+    <main class="page-layout">
+      <section class="content-column">
+        <div class="page-title"><p class="post-meta">CS2 · SEMANA DEL {dates[0].strftime("%d/%m/%Y")} AL {end.strftime("%d/%m/%Y")}</p><h1>{escape(data["focus"]) or "Resumen semanal"}</h1><p>Partidas y entrenamientos de esta semana.</p></div>
+        <section class="panel"><h2>Resumen de partidas</h2><div class="table-wrap"><table><tbody>{"".join(weekly_rows)}</tbody></table></div></section>
+        {f'<section class="panel profile-snapshot"><h2>Datos generales del perfil</h2><p>{multiline(data["profile_stats"])}</p><p class="post-meta">Datos de CSStats sin fecha; no están asignados a un día.</p></section>' if data["profile_stats"].strip() else ""}
+        <h2 class="section-heading">Día a día</h2>
+        <section class="day-grid">{"".join(day_cards)}</section>
+        <section class="panel"><h2>Notas de la semana</h2><p>{multiline(data["summary"]) or "Sin notas esta semana."}</p></section>
+        <p><a href="index.html">← Volver al diario</a></p>
+      </section>
+      <aside class="site-sidebar"><section class="sidebar-box"><h2>Mi perfil</h2><p><a href="{escape(data["profile_url"])}">Ver estadísticas en CSStats</a></p></section><section class="sidebar-box"><h2>Secciones</h2><ul><li><a href="../index.html">Inicio</a></li><li><a href="../reviews/index.html">Reviews</a></li><li><a href="index.html">Diario de CS2</a></li></ul></section><section class="sidebar-box"><h2>Sobre este registro</h2><p>Apuntes personales de partidas y práctica.</p></section></aside>
+    </main>
+    <footer class="site-footer"><span><a href="index.html">Volver al diario</a></span><span>MikissitoBlog</span></footer>
+  </div>
 </body></html>
 """
     output.write_text(week_html, encoding="utf-8")
@@ -256,10 +275,10 @@ def add_week_card(filename: str, start: date, end: date, data: dict[str, str]) -
     index = TRAINING_DIR / "index.html"
     source = index.read_text(encoding="utf-8")
     marker = "    <!-- GENERATED WEEKS -->"
-    card = f"""    <article class="panel week-card">
-      <p class="eyebrow">CS2 // SEMANA {start.strftime("%d/%m")} — {end.strftime("%d/%m/%Y")}</p>
-      <h2><a href="{escape(filename)}">{escape(data["focus"]) or "Weekly Report"}</a></h2>
-      <a class="text-link" href="{escape(filename)}">ABRIR INFORME ↗</a>
+    card = f"""    <article class="week-card">
+      <p class="post-meta">CS2 · SEMANA DEL {start.strftime("%d/%m/%Y")} AL {end.strftime("%d/%m/%Y")}</p>
+      <h2><a href="{escape(filename)}">{escape(data["focus"]) or "Resumen semanal"}</a></h2>
+      <p><a href="{escape(filename)}">Ver el resumen de la semana</a></p>
     </article>
 """
     if marker not in source:

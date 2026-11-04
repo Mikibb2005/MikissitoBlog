@@ -1,6 +1,6 @@
 # MikissitoBlog
 
-Blog estático en español con estética retro de Windows 98/Counter-Strike. El sitio publicado usa HTML y CSS, por lo que puede alojarse en GitHub Pages sin PHP ni servidor.
+Blog estático en español con el aspecto sencillo de una página personal de principios de los 2000. El sitio publicado usa HTML y CSS, por lo que puede alojarse en GitHub Pages sin PHP ni servidor.
 
 ## Publicar en GitHub Pages
 
