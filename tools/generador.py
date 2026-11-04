@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import html
+import csv
 import json
 import re
 import urllib.error
@@ -13,7 +14,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -107,6 +108,13 @@ def fetch_profile(url: str) -> list[str]:
     if "challenge-platform" in page.lower() or "verificación de seguridad" in page.lower():
         raise OSError("CSStats mostró una verificación de seguridad y no permitió leer las estadísticas.")
 
+    extracted = extract_html_stats(page)
+    if not extracted:
+        raise OSError("La página no expone tablas o datos JSON legibles sin ejecutar scripts.")
+    return extracted
+
+
+def extract_html_stats(page: str) -> list[str]:
     parser = TableParser()
     parser.feed(page)
     extracted: list[str] = []
@@ -131,9 +139,65 @@ def fetch_profile(url: str) -> list[str]:
                         f"{key}: {value}" for key, value in item.items() if isinstance(value, (str, int, float))
                     )
 
-    if not extracted:
-        raise OSError("La página no expone tablas o datos JSON legibles sin ejecutar scripts.")
     return list(dict.fromkeys(extracted))
+
+
+def parse_local_stats(path: Path) -> list[str]:
+    suffix = path.suffix.lower()
+    content = path.read_text(encoding="utf-8-sig", errors="replace")
+    if suffix in {".html", ".htm"}:
+        rows = extract_html_stats(content)
+    elif suffix == ".json":
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as error:
+            raise ValueError(f"El archivo JSON no es válido: {error.msg}.") from error
+
+        def flatten(value: object, prefix: str = "") -> list[str]:
+            if isinstance(value, dict):
+                result: list[str] = []
+                for key, child in value.items():
+                    label = f"{prefix}.{key}" if prefix else str(key)
+                    result.extend(flatten(child, label))
+                return result
+            if isinstance(value, list):
+                result = []
+                for index, child in enumerate(value, start=1):
+                    result.extend(flatten(child, f"{prefix} [{index}]"))
+                return result
+            if isinstance(value, (str, int, float, bool)):
+                return [f"{prefix}: {value}"]
+            return []
+
+        rows = flatten(payload)
+    elif suffix in {".csv", ".tsv"}:
+        sample = content[:4096]
+        delimiter = "\t" if suffix == ".tsv" else ","
+        try:
+            delimiter = csv.Sniffer().sniff(sample, delimiters=",;\t").delimiter
+        except csv.Error:
+            pass
+        parsed_rows = list(csv.reader(content.splitlines(), delimiter=delimiter))
+        nonempty_rows = [[cell.strip() for cell in row] for row in parsed_rows if any(cell.strip() for cell in row)]
+        if not nonempty_rows:
+            rows = []
+        else:
+            headers = nonempty_rows[0]
+            rows = []
+            for row in nonempty_rows[1:]:
+                values = [
+                    f"{headers[index]}: {value}" if index < len(headers) and headers[index] else value
+                    for index, value in enumerate(row)
+                    if value
+                ]
+                if values:
+                    rows.append(" | ".join(values))
+    else:
+        rows = [line.strip() for line in content.splitlines() if line.strip()]
+
+    if not rows:
+        raise ValueError("No se encontraron estadísticas legibles. Prueba con un CSV, JSON o HTML guardado.")
+    return list(dict.fromkeys(rows))
 
 
 def write_review(data: dict[str, str]) -> Path:
@@ -376,8 +440,11 @@ class GeneratorApp(tk.Tk):
         form = self.week_tab
         self.profile_url = self.field(form, "Perfil CSStats", 0, DEFAULT_PROFILE)
         self.week_start = self.field(form, "Lunes de la semana (AAAA-MM-DD)", 1, self.monday_of_current_week().isoformat())
-        ttk.Button(form, text="INTENTAR IMPORTAR CSSTATS", command=self.import_stats).grid(row=2, column=1, sticky="e", pady=(5, 12))
-        self.import_status = ttk.Label(form, text="La importación solo realiza una petición HTTP normal; no evita verificaciones de seguridad.")
+        import_buttons = ttk.Frame(form)
+        import_buttons.grid(row=2, column=1, sticky="e", pady=(5, 12))
+        ttk.Button(import_buttons, text="INTENTAR LEER PERFIL", command=self.import_stats).pack(side="left", padx=(0, 8))
+        ttk.Button(import_buttons, text="CARGAR ARCHIVO GUARDADO", command=self.import_stats_file).pack(side="left")
+        self.import_status = ttk.Label(form, text="Si CSStats responde 403, guarda una copia o exportación y cárgala aquí.")
         self.import_status.grid(row=3, column=1, sticky="w", pady=(0, 8))
         self.profile_stats = self.text_field(form, "Datos del perfil importados (sin fecha)", 4, 3)
         self.day_fields: list[dict[str, tk.Widget]] = []
@@ -422,11 +489,23 @@ class GeneratorApp(tk.Tk):
         try:
             rows = fetch_profile(url)
         except (OSError, ValueError) as error:
+            if "HTTP 403" in str(error):
+                self.import_status.configure(text="CSStats rechazó la petición automática (403). Carga un archivo descargado desde el navegador.")
+                explanation = (
+                    "CSStats ha rechazado la petición de la aplicación con HTTP 403. "
+                    "La herramienta no puede leer ese perfil directamente.\n\n"
+                    "Abre el perfil en el navegador, guarda una copia HTML o una exportación CSV/JSON si está disponible, "
+                    "y usa «CARGAR ARCHIVO GUARDADO»."
+                )
+            else:
+                self.import_status.configure(text="No se pudo leer el perfil. Puedes cargar una copia o exportación guardada.")
+                explanation = (
+                    f"{error}\n\nRevisa el perfil en el navegador y, si puedes, guarda una copia o exportación:\n{url}"
+                )
             messagebox.showwarning(
                 "No se han podido importar las estadísticas",
-                f"{error}\n\nRevisa el perfil aquí y completa las estadísticas por día:\n{url}",
+                explanation,
             )
-            self.import_status.configure(text="Importación no disponible. Revisa el enlace y completa los días manualmente.")
             return
         joined = "\n".join(rows)
         self.profile_stats.insert("end", ("\n" if self.read_text(self.profile_stats) else "") + joined)
@@ -435,6 +514,31 @@ class GeneratorApp(tk.Tk):
             "Datos encontrados",
             "Se encontraron datos estáticos y se guardaron como datos generales del perfil.\n"
             "No se asignan a días porque la página no indica aquí la fecha de cada dato. Registra las estadísticas diarias abajo; las secciones cargadas por JavaScript pueden no estar incluidas.",
+        )
+
+    def import_stats_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Selecciona un archivo de estadísticas guardado",
+            filetypes=[
+                ("Archivos de estadísticas", "*.html *.htm *.csv *.tsv *.json *.txt"),
+                ("Todos los archivos", "*.*"),
+            ],
+        )
+        if not selected:
+            return
+        try:
+            rows = parse_local_stats(Path(selected))
+        except (OSError, ValueError) as error:
+            messagebox.showerror("No se pudo leer el archivo", str(error))
+            self.import_status.configure(text="No se pudo leer el archivo. Prueba con una exportación CSV, JSON o HTML.")
+            return
+        joined = "\n".join(rows)
+        self.profile_stats.insert("end", ("\n" if self.read_text(self.profile_stats) else "") + joined)
+        self.import_status.configure(text=f"Datos cargados desde {Path(selected).name}. Comprueba y reparte por día si procede.")
+        messagebox.showinfo(
+            "Archivo importado",
+            "Los datos se han añadido al bloque general del perfil. "
+            "Comprueba el contenido y copia manualmente al día correspondiente las estadísticas que tengan fecha.",
         )
 
     def generate_week(self) -> None:

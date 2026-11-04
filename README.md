@@ -22,7 +22,7 @@ La ventana **Developer Desk** permite:
 
 - Crear una review con título, juego, imagen, fecha, puntuación, plataforma, género, texto y pros/contras. Se genera `reviews\<slug>.html` y se añade una tarjeta a `reviews\index.html`.
 - Preparar un informe de lunes a domingo, añadir datos y notas por día, resumen y objetivo semanal. Se genera `entrenamiento\semana-AAAA-MM-DD.html` y se añade al índice semanal.
-- Intentar importar tablas y datos JSON visibles desde la URL de CSStats. Es una petición HTTP normal; no automatiza una sesión ni intenta superar CAPTCHA o verificaciones anti-bots. Si el sitio la bloquea, la aplicación muestra el error y el enlace del perfil para continuar manualmente. Los datos importados sin fecha quedan separados del registro diario para no atribuirlos a un día incorrecto.
+- Intentar importar tablas y datos JSON visibles desde la URL de CSStats. Es una petición HTTP normal; no automatiza una sesión ni intenta superar CAPTCHA o verificaciones anti-bots. CSStats puede rechazarla con HTTP 403; en ese caso, abre el perfil en el navegador, guarda una copia HTML o una exportación CSV/JSON si está disponible y usa **Cargar archivo guardado**. El generador lee HTML, CSV, TSV, JSON y TXT locales. Los datos importados sin fecha quedan separados del registro diario para no atribuirlos a un día incorrecto.
 
 Las estadísticas diarias se escriben por día; los datos visibles importados sin fechas aparecen como una captura general del perfil. El generador no inventa métricas ni las calcula a partir de datos incompletos. Revisa el contenido generado antes de publicarlo.
 
