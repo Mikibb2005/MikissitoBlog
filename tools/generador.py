@@ -200,14 +200,223 @@ def parse_local_stats(path: Path) -> list[str]:
     return list(dict.fromkeys(rows))
 
 
-def write_review(data: dict[str, str]) -> Path:
+class PageNode:
+    def __init__(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.tag = tag
+        self.attrs = dict(attrs)
+        self.children: list[PageNode] = []
+        self.content: list[str | PageNode] = []
+
+    def text(self) -> str:
+        values = [
+            item if isinstance(item, str) else ("\n" if item.tag == "br" else item.text())
+            for item in self.content
+        ]
+        return "".join(values).strip()
+
+    def find(self, tag: str | None = None, class_name: str | None = None) -> list[PageNode]:
+        matches = []
+        for child in self.children:
+            classes = child.attrs.get("class", "").split()
+            if (tag is None or child.tag == tag) and (class_name is None or class_name in classes):
+                matches.append(child)
+            matches.extend(child.find(tag, class_name))
+        return matches
+
+
+class PageParser(HTMLParser):
+    VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.root = PageNode("document", [])
+        self.stack = [self.root]
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        node = PageNode(tag, attrs)
+        self.stack[-1].children.append(node)
+        self.stack[-1].content.append(node)
+        if tag not in self.VOID_TAGS:
+            self.stack.append(node)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        node = PageNode(tag, attrs)
+        self.stack[-1].children.append(node)
+        self.stack[-1].content.append(node)
+
+    def handle_endtag(self, tag: str) -> None:
+        for index in range(len(self.stack) - 1, 0, -1):
+            if self.stack[index].tag == tag:
+                del self.stack[index:]
+                return
+
+    def handle_data(self, data: str) -> None:
+        self.stack[-1].content.append(data)
+
+
+def load_page_data(path: Path, kind: str) -> tuple[dict[str, str], list[dict[str, str]]]:
+    if path.suffix.lower() != ".html":
+        raise ValueError("Solo se pueden editar páginas HTML generadas.")
+    if not path.is_file():
+        raise FileNotFoundError(f"No se encontró la página: {path}")
+    parser = PageParser()
+    parser.feed(path.read_text(encoding="utf-8"))
+    root = parser.root
+    metadata = root.find("script")
+    for node in metadata:
+        if node.attrs.get("id") == "mikissito-entry":
+            try:
+                payload = json.loads(node.text())
+            except json.JSONDecodeError as error:
+                raise ValueError(f"Los datos editables de {path.name} no son válidos.") from error
+            if payload.get("kind") == kind:
+                if kind == "review":
+                    return payload["data"], []
+                return payload["data"], payload["days"]
+
+    if kind == "review":
+        headings = root.find("h1")
+        if not headings:
+            raise ValueError(f"{path.name} no parece una review generada.")
+        title = headings[0].text()
+        meta_nodes = root.find("p", "post-meta")
+        date_text = meta_nodes[0].text().replace("REVIEW · ", "", 1) if meta_nodes else ""
+        page_titles = root.find("div", "page-title")
+        page_heading = root.find("section", "page-heading")
+        detail = ""
+        if page_titles:
+            paragraphs = page_titles[0].find("p")
+            detail = paragraphs[-1].text() if paragraphs else ""
+        elif page_heading:
+            paragraphs = page_heading[0].find("p")
+            if paragraphs:
+                date_match = re.search(r"REVIEW\s*//\s*(.+)", paragraphs[0].text())
+                if date_match:
+                    date_text = date_match.group(1).strip()
+                detail = paragraphs[-1].text() if len(paragraphs) > 1 else ""
+        details = [part.strip() for part in re.split(r"\s*(?:·|//)\s*", detail)]
+        footers = root.find("footer", "site-footer")
+        game = details[0] if page_titles and details else ""
+        if not page_titles and footers:
+            game_match = re.search(r"REVIEW\s*//\s*(.+)", footers[0].text())
+            game = game_match.group(1).strip() if game_match else ""
+        layouts = root.find("article", "review-layout")
+        paragraphs = layouts[0].find("p") if layouts else []
+        review_text = ""
+        if page_heading and paragraphs:
+            marker_index = next((index for index, node in enumerate(paragraphs) if "SOBRE EL JUEGO" in node.text().upper()), -1)
+            if marker_index >= 0 and marker_index + 1 < len(paragraphs):
+                review_text = paragraphs[marker_index + 1].text()
+        elif paragraphs:
+            review_text = paragraphs[0].text()
+        score_nodes = root.find("span", "review-score") or root.find("p", "review-score")
+        score = score_nodes[0].text().split("/", 1)[0].strip() if score_nodes else ""
+        images = root.find("img", "review-cover")
+        points = root.find("section", "review-points")
+        lists = points[0].find("ul") if points else []
+        pros = [item.text() for item in lists[0].find("li")] if len(lists) > 0 else []
+        cons = [item.text() for item in lists[1].find("li")] if len(lists) > 1 else []
+        return {
+            "title": title,
+            "game": game,
+            "date": date_text,
+            "platform": details[1] if page_titles and len(details) > 1 else (details[0] if len(details) > 0 else ""),
+            "genre": details[2] if page_titles and len(details) > 2 else (details[1] if len(details) > 1 else ""),
+            "score": score,
+            "image": images[0].attrs.get("src", "") if images else "",
+            "review": review_text,
+            "pros": "\n".join(pros),
+            "cons": "\n".join(cons),
+        }, []
+
+    headings = root.find("h1")
+    if not headings:
+        raise ValueError(f"{path.name} no parece un informe semanal generado.")
+    focus = headings[0].text()
+    meta_nodes = root.find("p", "post-meta") or root.find("p", "eyebrow")
+    meta_text = meta_nodes[0].text() if meta_nodes else ""
+    week_start_date = None
+    old_week_match = re.search(
+        r"SEMANA\s+(\d{2})/(\d{2})\s*[—-]\s*\d{2}/(\d{2})/(\d{4})",
+        meta_text,
+        flags=re.IGNORECASE,
+    )
+    if old_week_match:
+        start_day, start_month, end_month, end_year = map(int, old_week_match.groups())
+        start_year = end_year - 1 if start_month > end_month else end_year
+        week_start_date = date(start_year, start_month, start_day)
+    else:
+        week_match = re.search(r"(?:DEL\s+)?(\d{2})/(\d{2})/(\d{4})", meta_text)
+        if week_match:
+            week_start_date = date(int(week_match.group(3)), int(week_match.group(2)), int(week_match.group(1)))
+    if week_start_date is None:
+        raise ValueError(f"No se pudo leer la fecha inicial de {path.name}.")
+    week_start = week_start_date.isoformat()
+    if headings[0].text().lower() == "weekly report":
+        page_heading = root.find("section", "page-heading")
+        if page_heading:
+            paragraphs = page_heading[0].find("p")
+            if len(paragraphs) > 1:
+                focus = paragraphs[1].text()
+    profile_url = DEFAULT_PROFILE
+    for link in root.find("a"):
+        if "csstats" in link.text().lower():
+            profile_url = link.attrs.get("href", DEFAULT_PROFILE)
+            break
+    profile_nodes = root.find("section", "profile-snapshot")
+    profile_stats = "\n".join(node.text() for node in profile_nodes[0].find("p")[:1]) if profile_nodes else ""
+    day_nodes = root.find("article", "day-card")
+    days = []
+    for node in day_nodes:
+        titles = node.find("h2")
+        paragraphs = node.find("p")
+        details = node.find("details")
+        stats = details[0].find("p") if details else []
+        days.append({
+            "title": titles[0].text() if titles else "",
+            "stats": stats[0].text().replace("<br>", "\n") if stats else "",
+            "notes": paragraphs[1].text() if len(paragraphs) > 1 else "",
+        })
+    if len(days) != 7:
+        raise ValueError(f"{path.name} no contiene los siete días de un informe semanal.")
+    summary = ""
+    for section in root.find("section", "panel"):
+        section_headings = section.find("h2")
+        if section_headings and section_headings[0].text().lower() in {
+            "notas de la semana",
+            "qué mantener / qué mejorar",
+            "que mantener / que mejorar",
+        }:
+            paragraphs = section.find("p")
+            if paragraphs:
+                summary = paragraphs[0].text()
+    return {
+        "profile_url": profile_url,
+        "week_start": week_start,
+        "focus": focus,
+        "summary": summary,
+        "profile_stats": profile_stats,
+    }, days
+
+
+def embed_page_data(kind: str, data: dict[str, str], days: list[dict[str, str]] | None = None) -> str:
+    payload: dict[str, object] = {"kind": kind, "data": data}
+    if days is not None:
+        payload["days"] = days
+    serialized = json.dumps(payload, ensure_ascii=False).replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    return f'<script type="application/json" id="mikissito-entry">{serialized}</script>'
+
+
+def write_review(data: dict[str, str], output_path: Path | None = None) -> Path:
     title = data["title"].strip()
     if not title:
         raise ValueError("El título de la review es obligatorio.")
     slug = slugify(title)
     REVIEWS_DIR.mkdir(parents=True, exist_ok=True)
-    output = REVIEWS_DIR / f"{slug}.html"
-    if output.exists():
+    output = (output_path or (REVIEWS_DIR / f"{slug}.html")).resolve()
+    if output.parent != REVIEWS_DIR.resolve():
+        raise ValueError("La review debe guardarse dentro de la carpeta reviews.")
+    if output.exists() and output_path is None:
         raise FileExistsError(f"Ya existe una review llamada «{slug}». Cambia el título o elimina la página anterior.")
 
     score = escape(data["score"]) or "—"
@@ -252,6 +461,7 @@ def write_review(data: dict[str, str]) -> Path:
 </body>
 </html>
 """
+    review_html = review_html.replace("</body>", f"  {embed_page_data('review', data)}\n</body>")
     output.write_text(review_html, encoding="utf-8")
     add_review_card(output.name, title, data)
     return output
@@ -260,7 +470,7 @@ def write_review(data: dict[str, str]) -> Path:
 def add_review_card(filename: str, title: str, data: dict[str, str]) -> None:
     index = REVIEWS_DIR / "index.html"
     source = index.read_text(encoding="utf-8")
-    marker = "    <!-- GENERATED REVIEWS -->"
+    marker = "<!-- GENERATED REVIEWS -->"
     card = f"""    <article class="review-card">
       <p class="post-meta">{escape(data["date"])} · {escape(data["platform"])}</p>
       <h2><a href="{escape(filename)}">{escape(title)}</a></h2>
@@ -268,12 +478,22 @@ def add_review_card(filename: str, title: str, data: dict[str, str]) -> None:
       <p><a href="{escape(filename)}">Leer la review</a></p>
     </article>
 """
-    if marker in source:
+    source, replaced = replace_card(source, "review-card", filename, card)
+    if not replaced and marker in source:
         source = source.replace(marker, marker + "\n" + card.rstrip(), 1)
-    else:
+    elif not replaced:
         raise ValueError("No se encontró el marcador de reviews generadas en reviews/index.html.")
     source = re.sub(r"\s*<!-- EMPTY REVIEWS START -->.*?<!-- EMPTY REVIEWS END -->", "", source, count=1, flags=re.DOTALL)
     index.write_text(source, encoding="utf-8")
+
+
+def replace_card(source: str, class_name: str, filename: str, card: str) -> tuple[str, bool]:
+    pattern = re.compile(r'<article\b[^>]*class="([^"]*)"[^>]*>.*?</article>', re.DOTALL)
+    target = f'href="{escape(filename)}"'
+    for match in pattern.finditer(source):
+        if class_name in match.group(1).split() and target in match.group(0):
+            return source[:match.start()] + card.rstrip() + source[match.end():], True
+    return source, False
 
 
 def week_dates(start_text: str) -> list[date]:
@@ -286,14 +506,17 @@ def week_dates(start_text: str) -> list[date]:
     return [start + timedelta(days=offset) for offset in range(7)]
 
 
-def write_week(data: dict[str, str], days: list[dict[str, str]]) -> Path:
+def write_week(data: dict[str, str], days: list[dict[str, str]], output_path: Path | None = None) -> Path:
     dates = week_dates(data["week_start"])
     end = dates[-1]
     TRAINING_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"semana-{dates[0].isoformat()}.html"
-    output = TRAINING_DIR / filename
-    if output.exists():
+    output = (output_path or (TRAINING_DIR / filename)).resolve()
+    if output.parent != TRAINING_DIR.resolve():
+        raise ValueError("El informe debe guardarse dentro de la carpeta entrenamiento.")
+    if output.exists() and output_path is None:
         raise FileExistsError(f"Ya existe el informe {filename}.")
+    filename = output.name
     weekly_rows = []
     day_cards = []
     day_names = ("LUNES", "MARTES", "MIÉRCOLES", "JUEVES", "VIERNES", "SÁBADO", "DOMINGO")
@@ -330,6 +553,7 @@ def write_week(data: dict[str, str], days: list[dict[str, str]]) -> Path:
   </div>
 </body></html>
 """
+    week_html = week_html.replace("</body>", f"  {embed_page_data('week', data, days)}\n</body>")
     output.write_text(week_html, encoding="utf-8")
     add_week_card(filename, dates[0], end, data)
     return output
@@ -338,16 +562,18 @@ def write_week(data: dict[str, str], days: list[dict[str, str]]) -> Path:
 def add_week_card(filename: str, start: date, end: date, data: dict[str, str]) -> None:
     index = TRAINING_DIR / "index.html"
     source = index.read_text(encoding="utf-8")
-    marker = "    <!-- GENERATED WEEKS -->"
+    marker = "<!-- GENERATED WEEKS -->"
     card = f"""    <article class="week-card">
       <p class="post-meta">CS2 · SEMANA DEL {start.strftime("%d/%m/%Y")} AL {end.strftime("%d/%m/%Y")}</p>
       <h2><a href="{escape(filename)}">{escape(data["focus"]) or "Resumen semanal"}</a></h2>
       <p><a href="{escape(filename)}">Ver el resumen de la semana</a></p>
     </article>
 """
-    if marker not in source:
+    source, replaced = replace_card(source, "week-card", filename, card)
+    if not replaced and marker not in source:
         raise ValueError("No se encontró el marcador de informes semanales en entrenamiento/index.html.")
-    source = source.replace(marker, marker + "\n" + card.rstrip(), 1)
+    if not replaced:
+        source = source.replace(marker, marker + "\n" + card.rstrip(), 1)
     source = re.sub(r"\s*<!-- EMPTY WEEKS START -->.*?<!-- EMPTY WEEKS END -->", "", source, count=1, flags=re.DOTALL)
     index.write_text(source, encoding="utf-8")
 
@@ -402,8 +628,19 @@ class GeneratorApp(tk.Tk):
     def read_text(widget: tk.Text) -> str:
         return widget.get("1.0", "end").strip()
 
+    @staticmethod
+    def set_entry(widget: ttk.Entry, value: str) -> None:
+        widget.delete(0, "end")
+        widget.insert(0, value)
+
+    @staticmethod
+    def set_text(widget: tk.Text, value: str) -> None:
+        widget.delete("1.0", "end")
+        widget.insert("1.0", value)
+
     def create_review_form(self) -> None:
         form = self.review_tab
+        self.review_edit_path: Path | None = None
         self.review_title = self.field(form, "Título *", 0)
         self.review_game = self.field(form, "Juego", 1)
         self.review_date = self.field(form, "Fecha (AAAA-MM-DD)", 2, date.today().isoformat())
@@ -415,6 +652,55 @@ class GeneratorApp(tk.Tk):
         self.review_pros = self.text_field(form, "Pros (uno por línea)", 8, 3)
         self.review_cons = self.text_field(form, "Contras (uno por línea)", 9, 3)
         ttk.Button(form, text="GENERAR PÁGINA DE REVIEW", command=self.generate_review).grid(row=10, column=1, sticky="e", pady=(14, 0))
+        edit_row = ttk.Frame(form)
+        edit_row.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        ttk.Label(edit_row, text="Editar review:").pack(side="left", padx=(0, 8))
+        self.review_selector = ttk.Combobox(edit_row, state="readonly", width=36)
+        self.review_selector.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ttk.Button(edit_row, text="Cargar", command=self.load_selected_review).pack(side="left", padx=(0, 6))
+        ttk.Button(edit_row, text="Nueva", command=self.new_review).pack(side="left")
+        self.refresh_review_pages()
+
+    def refresh_review_pages(self, selected: Path | None = None) -> None:
+        paths = sorted(path for path in REVIEWS_DIR.glob("*.html") if path.name.lower() != "index.html")
+        self.review_paths = {path.name: path for path in paths}
+        self.review_selector.configure(values=list(self.review_paths))
+        if selected is not None and selected.name in self.review_paths:
+            self.review_selector.set(selected.name)
+
+    def load_selected_review(self) -> None:
+        path = self.review_paths.get(self.review_selector.get())
+        if path is None:
+            messagebox.showinfo("Editar review", "No hay una review seleccionada.")
+            return
+        try:
+            data, _days = load_page_data(path, "review")
+        except (OSError, ValueError, KeyError) as error:
+            messagebox.showerror("No se pudo cargar la review", str(error))
+            return
+        self.review_edit_path = path
+        for field_name in ("title", "game", "date", "platform", "genre", "score", "image"):
+            self.set_entry(getattr(self, f"review_{field_name}"), data.get(field_name, ""))
+        text_widgets = {"review": self.review_body, "pros": self.review_pros, "cons": self.review_cons}
+        for field_name, widget in text_widgets.items():
+            self.set_text(widget, data.get(field_name, ""))
+
+    def new_review(self) -> None:
+        self.review_edit_path = None
+        self.review_selector.set("")
+        defaults = {
+            "title": "",
+            "game": "",
+            "date": date.today().isoformat(),
+            "platform": "",
+            "genre": "",
+            "score": "",
+            "image": "",
+        }
+        for field_name, value in defaults.items():
+            self.set_entry(getattr(self, f"review_{field_name}"), value)
+        for widget in (self.review_body, self.review_pros, self.review_cons):
+            self.set_text(widget, "")
 
     def generate_review(self) -> None:
         values = {
@@ -430,14 +716,17 @@ class GeneratorApp(tk.Tk):
             "cons": self.read_text(self.review_cons),
         }
         try:
-            path = write_review(values)
+            path = write_review(values, self.review_edit_path)
         except (OSError, ValueError) as error:
             messagebox.showerror("No se pudo generar la review", str(error))
             return
+        self.review_edit_path = path
+        self.refresh_review_pages(path)
         messagebox.showinfo("Review generada", f"Página creada y añadida al índice:\n{path}")
 
     def create_week_form(self) -> None:
         form = self.week_tab
+        self.week_edit_path: Path | None = None
         self.profile_url = self.field(form, "Perfil CSStats", 0, DEFAULT_PROFILE)
         self.week_start = self.field(form, "Lunes de la semana (AAAA-MM-DD)", 1, self.monday_of_current_week().isoformat())
         import_buttons = ttk.Frame(form)
@@ -475,7 +764,60 @@ class GeneratorApp(tk.Tk):
         self.week_focus = self.field(form, "Objetivo de la semana", 6)
         self.week_summary = self.text_field(form, "Resumen / mejoras", 7, 3)
         ttk.Button(form, text="GENERAR INFORME SEMANAL", command=self.generate_week).grid(row=8, column=1, sticky="e", pady=(12, 0))
+        edit_row = ttk.Frame(form)
+        edit_row.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        ttk.Label(edit_row, text="Editar semana:").pack(side="left", padx=(0, 8))
+        self.week_selector = ttk.Combobox(edit_row, state="readonly", width=36)
+        self.week_selector.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        ttk.Button(edit_row, text="Cargar", command=self.load_selected_week).pack(side="left", padx=(0, 6))
+        ttk.Button(edit_row, text="Nueva", command=self.new_week).pack(side="left")
         form.rowconfigure(5, weight=1)
+        self.refresh_week_pages()
+
+    def refresh_week_pages(self, selected: Path | None = None) -> None:
+        paths = sorted(path for path in TRAINING_DIR.glob("*.html") if path.name.lower() != "index.html")
+        self.week_paths = {path.name: path for path in paths}
+        self.week_selector.configure(values=list(self.week_paths))
+        if selected is not None and selected.name in self.week_paths:
+            self.week_selector.set(selected.name)
+
+    def load_selected_week(self) -> None:
+        path = self.week_paths.get(self.week_selector.get())
+        if path is None:
+            messagebox.showinfo("Editar semana", "No hay un informe seleccionado.")
+            return
+        try:
+            data, days = load_page_data(path, "week")
+        except (OSError, ValueError, KeyError) as error:
+            messagebox.showerror("No se pudo cargar el informe", str(error))
+            return
+        self.week_edit_path = path
+        entry_widgets = {
+            "profile_url": self.profile_url,
+            "week_start": self.week_start,
+            "focus": self.week_focus,
+        }
+        for field_name, widget in entry_widgets.items():
+            self.set_entry(widget, data.get(field_name, ""))
+        self.set_text(self.profile_stats, data.get("profile_stats", ""))
+        self.set_text(self.week_summary, data.get("summary", ""))
+        for widgets, values in zip(self.day_fields, days):
+            self.set_entry(widgets["title"], values.get("title", ""))
+            self.set_text(widgets["stats"], values.get("stats", ""))
+            self.set_text(widgets["notes"], values.get("notes", ""))
+
+    def new_week(self) -> None:
+        self.week_edit_path = None
+        self.week_selector.set("")
+        self.set_entry(self.profile_url, DEFAULT_PROFILE)
+        self.set_entry(self.week_start, self.monday_of_current_week().isoformat())
+        self.set_entry(self.week_focus, "")
+        self.set_text(self.profile_stats, "")
+        self.set_text(self.week_summary, "")
+        for number, widgets in enumerate(self.day_fields):
+            self.set_entry(widgets["title"], "Entrenamiento" if number < 5 else "Partidas / descanso")
+            self.set_text(widgets["stats"], "")
+            self.set_text(widgets["notes"], "")
 
     @staticmethod
     def monday_of_current_week() -> date:
@@ -558,10 +900,12 @@ class GeneratorApp(tk.Tk):
             "summary": self.read_text(self.week_summary),
         }
         try:
-            output = write_week(data, days)
+            output = write_week(data, days, self.week_edit_path)
         except (OSError, ValueError) as error:
             messagebox.showerror("No se pudo generar el informe", str(error))
             return
+        self.week_edit_path = output
+        self.refresh_week_pages(output)
         messagebox.showinfo("Informe generado", f"Página semanal creada y añadida al índice:\n{output}")
 
 
