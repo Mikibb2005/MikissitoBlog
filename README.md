@@ -5,7 +5,7 @@ Blog estático en español con estética retro de Windows 98/Counter-Strike. El 
 ## Publicar en GitHub Pages
 
 1. Sube el contenido del repositorio a GitHub.
-2. En **Settings → Pages**, elige la rama que contiene `index.html` y la carpeta raíz.
+2. En **Settings → Pages**, selecciona **Deploy from a branch**, la rama `main` y la carpeta `/(root)`, y pulsa **Save**.
 3. Las páginas de review y entrenamiento creadas por la herramienta también deben añadirse y subirse al repositorio.
 
 El sitio no incluye un foro interactivo ni guarda datos por sí solo: GitHub Pages sirve archivos estáticos. Las reviews y los informes semanales son páginas HTML generadas localmente.
